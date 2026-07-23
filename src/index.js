@@ -1,0 +1,229 @@
+import express from 'express';
+import prisma from './db.js';
+import multer from 'multer';
+import { PDFParse } from 'pdf-parse';
+import { chunkText, splitIntoPages, getAllowedCategories } from './utils.js';
+
+const upload = multer({ dest: 'uploads/' });
+
+const app = express();
+app.use(express.json());
+
+
+
+
+async function generateEmbedding(text) {
+  const response = await fetch('http://localhost:11434/api/embed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'nomic-embed-text', input: text })
+  });
+  const data = await response.json();
+  return data.embeddings[0];
+}
+
+async function generateAnswer(question, contextChunks) {
+  const contextText = contextChunks
+    .map((c, i) => `[Source ${i + 1}: ${c.title}, Page ${c.page ?? 'N/A'}]\n${c.content}`)
+    .join('\n\n');
+
+  const systemPrompt = `You are a helpful assistant answering questions using ONLY the provided context. 
+Rules:
+- Only use information from the context below to answer.
+- If the context doesn't contain the answer, say "I don't have enough information to answer that."
+- Always cite which source(s) you used, like (Source 1) or (Source 2).
+- Be concise and direct.`;
+
+  const userPrompt = `Context:\n${contextText}\n\nQuestion: ${question}`;
+
+  const response = await fetch('http://localhost:11434/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama3.1:8b',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      stream: false
+    })
+  });
+
+  const data = await response.json();
+  return data.message.content;
+}
+
+app.get('/health', async (req, res) => {
+  try {
+    const userCount = await prisma.user.count();
+    res.json({ status: 'ok', userCount });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.get('/customers', async (req, res) => {
+  try {
+    const customers = await prisma.customer.findMany({
+      include: { tickets: true }
+    });
+    res.json(customers);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/documents/upload', upload.single('file'), async (req, res) => {
+  let parser;
+  try {
+    const fs = await import('fs');
+    const fileBuffer = fs.readFileSync(req.file.path);
+
+    parser = new PDFParse({ data: fileBuffer });
+    const pdfData = await parser.getText();
+
+    const document = await prisma.document.create({
+      data: {
+        title: req.body.title || req.file.originalname,
+        category: req.body.category || 'general',
+      }
+    });
+
+    console.log(`Extracted ${pdfData.text.length} characters from ${req.file.originalname}`);
+
+    const pages = splitIntoPages(pdfData.text);
+    let totalChunks = 0;
+
+    for (const page of pages) {
+      const pageChunks = chunkText(page.text);
+
+      for (const chunkContent of pageChunks) {
+        const embedding = await generateEmbedding(chunkContent);
+        const vectorString = `[${embedding.join(',')}]`;
+
+        const chunk = await prisma.documentChunk.create({
+          data: {
+            content: chunkContent,
+            page: page.pageNumber,
+            documentId: document.id,
+          }
+        });
+
+        await prisma.$executeRawUnsafe(
+          `UPDATE "DocumentChunk" SET embedding = $1::vector WHERE id = $2`,
+          vectorString,
+          chunk.id
+        );
+
+        totalChunks++;
+      }
+    }
+
+    console.log(`Created ${totalChunks} chunks across ${pages.length} pages for document ${document.id}`);
+
+    res.json({
+      document,
+      totalCharacters: pdfData.text.length,
+      pagesDetected: pages.length,
+      chunksCreated: totalChunks
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    if (parser) await parser.destroy();
+  }
+});
+
+app.post('/query', async (req, res) => {
+  try {
+    const { question } = req.body;
+    if (!question) {
+      return res.status(400).json({ error: 'question is required' });
+    }
+
+    const questionEmbedding = await generateEmbedding(question);
+    const vectorString = `[${questionEmbedding.join(',')}]`;
+
+    const results = await prisma.$queryRawUnsafe(
+      `SELECT dc.id, dc.content, dc.page, d.title, d.category,
+              1 - (dc.embedding <=> $1::vector) AS similarity
+       FROM "DocumentChunk" dc
+       JOIN "Document" d ON d.id = dc."documentId"
+       WHERE dc.embedding IS NOT NULL
+       ORDER BY dc.embedding <=> $1::vector
+       LIMIT 5`,
+      vectorString
+    );
+
+    res.json({ question, results });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/ask', async (req, res) => {
+  try {
+    const { question, role } = req.body;
+    if (!question) {
+      return res.status(400).json({ error: 'question is required' });
+    }
+
+    const allowedCategories = getAllowedCategories(role || 'support');
+
+    const questionEmbedding = await generateEmbedding(question);
+    const vectorString = `[${questionEmbedding.join(',')}]`;
+
+    const chunks = await prisma.$queryRawUnsafe(
+      `SELECT dc.id, dc.content, dc.page, d.title, d.category,
+              1 - (dc.embedding <=> $1::vector) AS similarity
+       FROM "DocumentChunk" dc
+       JOIN "Document" d ON d.id = dc."documentId"
+       WHERE dc.embedding IS NOT NULL
+         AND d.category = ANY($2::text[])
+       ORDER BY dc.embedding <=> $1::vector
+       LIMIT 5`,
+      vectorString,
+      allowedCategories
+    );
+
+    const SIMILARITY_THRESHOLD = 0.5;
+    const topScore = chunks.length > 0 ? chunks[0].similarity : 0;
+
+    if (chunks.length === 0 || topScore < SIMILARITY_THRESHOLD) {
+      return res.json({
+        question,
+        role: role || 'support',
+        answer: "I don't have enough information in the documents you have access to, to answer that question.",
+        sources: [],
+        topScore
+      });
+    }
+
+    const answer = await generateAnswer(question, chunks);
+
+    res.json({
+      question,
+      role: role || 'support',
+      answer,
+      sources: chunks.map((c) => ({
+        title: c.title,
+        page: c.page,
+        category: c.category,
+        similarity: c.similarity
+      })),
+      topScore
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
