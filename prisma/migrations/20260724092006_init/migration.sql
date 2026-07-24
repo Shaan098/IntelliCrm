@@ -1,8 +1,10 @@
+CREATE EXTENSION IF NOT EXISTS vector;
 -- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "email" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
     "role" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -48,6 +50,7 @@ CREATE TABLE "DocumentChunk" (
     "content" TEXT NOT NULL,
     "page" INTEGER,
     "documentId" TEXT NOT NULL,
+    "embedding" vector(768),
 
     CONSTRAINT "DocumentChunk_pkey" PRIMARY KEY ("id")
 );

@@ -51,6 +51,49 @@ Rules:
   return data.message.content;
 }
 
+async function generateEmailDraft(customer, ticket, contextChunks) {
+  const contextText = contextChunks.length > 0
+    ? contextChunks
+        .map((c, i) => `[Source ${i + 1}: ${c.title}, Page ${c.page ?? 'N/A'}]\n${c.content}`)
+        .join('\n\n')
+    : 'No relevant policy documents found.';
+
+  const systemPrompt = `You are a customer support agent drafting a professional, empathetic email reply.
+Rules:
+- Address the customer by name.
+- Reference their specific issue.
+- If policy context is provided below, ground your answer in it and mention the relevant policy naturally (don't just paste it).
+- If no relevant policy is found, write a helpful general reply and note that a human should verify next steps.
+- Keep it concise — 3-5 short paragraphs.
+- Sign off as "The Support Team".`;
+
+  const userPrompt = `Customer name: ${customer.name}
+Customer email: ${customer.email}
+Ticket subject: ${ticket.subject}
+Ticket description: ${ticket.description}
+
+Relevant policy context:
+${contextText}
+
+Draft a reply email to this customer.`;
+
+  const response = await fetch('http://localhost:11434/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama3.1:8b',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      stream: false
+    })
+  });
+
+  const data = await response.json();
+  return data.message.content;
+}
+
 app.get('/health', async (req, res) => {
   try {
     const userCount = await prisma.user.count();
@@ -167,8 +210,6 @@ app.post('/documents/upload', authenticateToken, upload.single('file'), async (r
   }
 });
 
-
-
 app.post('/query', async (req, res) => {
   try {
     const { question } = req.body;
@@ -250,6 +291,56 @@ app.post('/ask', authenticateToken, async (req, res) => {
         similarity: c.similarity
       })),
       topScore
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/tickets/:ticketId/draft-email', authenticateToken, async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+    const role = req.user.role;
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      include: { customer: true }
+    });
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    const allowedCategories = getAllowedCategories(role);
+    const searchQuery = `${ticket.subject} ${ticket.description}`;
+    const questionEmbedding = await generateEmbedding(searchQuery);
+    const vectorString = `[${questionEmbedding.join(',')}]`;
+
+    const chunks = await prisma.$queryRawUnsafe(
+      `SELECT dc.id, dc.content, dc.page, d.title, d.category,
+              1 - (dc.embedding <=> $1::vector) AS similarity
+       FROM "DocumentChunk" dc
+       JOIN "Document" d ON d.id = dc."documentId"
+       WHERE dc.embedding IS NOT NULL
+         AND d.category = ANY($2::text[])
+       ORDER BY dc.embedding <=> $1::vector
+       LIMIT 3`,
+      vectorString,
+      allowedCategories
+    );
+
+    const RELEVANCE_THRESHOLD = 0.5;
+    const relevantChunks = chunks.filter((c) => c.similarity >= RELEVANCE_THRESHOLD);
+
+    const draft = await generateEmailDraft(ticket.customer, ticket, relevantChunks);
+
+    res.json({
+      ticket: { id: ticket.id, subject: ticket.subject, status: ticket.status },
+      customer: { name: ticket.customer.name, email: ticket.customer.email },
+      draft,
+      usedPolicyContext: relevantChunks.length > 0,
+      sources: relevantChunks.map((c) => ({ title: c.title, page: c.page, similarity: c.similarity }))
     });
   } catch (err) {
     console.error(err);
