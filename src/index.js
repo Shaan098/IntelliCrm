@@ -101,9 +101,13 @@ app.get('/customers', async (req, res) => {
   }
 });
 
-app.post('/documents/upload', upload.single('file'), async (req, res) => {
+app.post('/documents/upload', authenticateToken, upload.single('file'), async (req, res) => {
   let parser;
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admin users can upload documents' });
+    }
+
     const fs = await import('fs');
     const fileBuffer = fs.readFileSync(req.file.path);
 
@@ -162,6 +166,8 @@ app.post('/documents/upload', upload.single('file'), async (req, res) => {
     if (parser) await parser.destroy();
   }
 });
+
+
 
 app.post('/query', async (req, res) => {
   try {
