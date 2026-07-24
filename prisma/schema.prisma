@@ -14,10 +14,10 @@ model User {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
+  password  String
   role      String
   createdAt DateTime @default(now())
 }
-
 model Customer {
   id        String   @id @default(uuid())
   name      String
@@ -46,9 +46,10 @@ model Document {
 }
 
 model DocumentChunk {
-  id         String   @id @default(uuid())
+  id         String                    @id @default(uuid())
   content    String
   page       Int?
-  document   Document @relation(fields: [documentId], references: [id])
+  document   Document                  @relation(fields: [documentId], references: [id])
   documentId String
+  embedding  Unsupported("vector(768)")?
 }

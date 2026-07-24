@@ -1,0 +1,58 @@
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import prisma from './db.js';
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const SALT_ROUNDS = 10;
+
+export async function registerUser(name, email, password, role) {
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    throw new Error('A user with this email already exists');
+  }
+
+  const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+  const user = await prisma.user.create({
+    data: { name, email, password: hashedPassword, role }
+  });
+
+  return { id: user.id, name: user.name, email: user.email, role: user.role };
+}
+
+export async function loginUser(email, password) {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    throw new Error('Invalid email or password');
+  }
+
+  const passwordMatches = await bcrypt.compare(password, user.password);
+  if (!passwordMatches) {
+    throw new Error('Invalid email or password');
+  }
+
+  const token = jwt.sign(
+    { userId: user.id, role: user.role, email: user.email },
+    JWT_SECRET,
+    { expiresIn: '2h' }
+  );
+
+  return { token, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+}
+
+export function authenticateToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    }
+    req.user = decoded;
+    next();
+  });
+}

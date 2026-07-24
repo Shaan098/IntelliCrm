@@ -3,14 +3,12 @@ import prisma from './db.js';
 import multer from 'multer';
 import { PDFParse } from 'pdf-parse';
 import { chunkText, splitIntoPages, getAllowedCategories } from './utils.js';
+import { registerUser, loginUser, authenticateToken } from './auth.js';
 
 const upload = multer({ dest: 'uploads/' });
 
 const app = express();
 app.use(express.json());
-
-
-
 
 async function generateEmbedding(text) {
   const response = await fetch('http://localhost:11434/api/embed', {
@@ -60,6 +58,34 @@ app.get('/health', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+app.post('/auth/register', async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ error: 'name, email, password, and role are required' });
+    }
+
+    const user = await registerUser(name, email, password, role);
+    res.json({ user });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'email and password are required' });
+    }
+
+    const result = await loginUser(email, password);
+    res.json(result);
+  } catch (err) {
+    res.status(401).json({ error: err.message });
   }
 });
 
@@ -165,14 +191,16 @@ app.post('/query', async (req, res) => {
   }
 });
 
-app.post('/ask', async (req, res) => {
+app.post('/ask', authenticateToken, async (req, res) => {
   try {
-    const { question, role } = req.body;
+    const { question } = req.body;
+    const role = req.user.role;
+
     if (!question) {
       return res.status(400).json({ error: 'question is required' });
     }
 
-    const allowedCategories = getAllowedCategories(role || 'support');
+    const allowedCategories = getAllowedCategories(role);
 
     const questionEmbedding = await generateEmbedding(question);
     const vectorString = `[${questionEmbedding.join(',')}]`;
@@ -196,7 +224,7 @@ app.post('/ask', async (req, res) => {
     if (chunks.length === 0 || topScore < SIMILARITY_THRESHOLD) {
       return res.json({
         question,
-        role: role || 'support',
+        role,
         answer: "I don't have enough information in the documents you have access to, to answer that question.",
         sources: [],
         topScore
@@ -207,7 +235,7 @@ app.post('/ask', async (req, res) => {
 
     res.json({
       question,
-      role: role || 'support',
+      role,
       answer,
       sources: chunks.map((c) => ({
         title: c.title,
