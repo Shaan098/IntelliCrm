@@ -62,8 +62,8 @@ async function generateEmailDraft(customer, ticket, contextChunks) {
 Rules:
 - Address the customer by name.
 - Reference their specific issue.
-- If policy context is provided below, ground your answer in it and mention the relevant policy naturally (don't just paste it).
-- If no relevant policy is found, write a helpful general reply and note that a human should verify next steps.
+- ONLY state specific policy terms (timeframes, coverage periods, conditions) if they are EXPLICITLY present in the policy context below. Do not infer, estimate, or invent numbers, timeframes, or policy details that aren't literally stated in the context.
+- If the policy context doesn't contain a clear answer to the customer's specific issue, write a helpful, empathetic general reply acknowledging the issue, and explicitly state that a team member will review the specific policy and follow up — do not guess.
 - Keep it concise — 3-5 short paragraphs.
 - Sign off as "The Support Team".`;
 
@@ -330,7 +330,7 @@ app.post('/tickets/:ticketId/draft-email', authenticateToken, async (req, res) =
       allowedCategories
     );
 
-    const RELEVANCE_THRESHOLD = 0.5;
+    const RELEVANCE_THRESHOLD = 0.55;
     const relevantChunks = chunks.filter((c) => c.similarity >= RELEVANCE_THRESHOLD);
 
     const draft = await generateEmailDraft(ticket.customer, ticket, relevantChunks);
