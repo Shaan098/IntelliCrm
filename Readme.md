@@ -87,8 +87,10 @@ npm test
 
 Runs the unit test suite (Node's built-in test runner, `node --test`) against
 `src/utils.js` — chunking, page-splitting, and role/category mapping logic,
-tested in isolation with no database or LLM dependency. Currently 8/8 passing,
-runs in under 200ms.
+tested in isolation with no database or LLM dependency — plus integration
+tests for `registerUser`/`loginUser` against the real database (password
+hashing, duplicate email rejection, wrong-password rejection). Currently
+13/13 passing.
 
 ## API
 
@@ -99,11 +101,45 @@ runs in under 200ms.
 | `POST /documents/upload` | Yes — `admin` role only | Upload a PDF (multipart form: `file`, `title`, `category`). Extracts text, splits by page, chunks, embeds, stores. |
 | `POST /query` | No | Raw semantic search — returns top 5 matching chunks with similarity scores, no LLM generation. |
 | `POST /ask` | Yes — any authenticated user | Full RAG: retrieves relevant chunks (filtered by the role in the caller's verified JWT), generates a grounded answer, refuses if nothing relevant is found. |
+| `POST /tickets/:ticketId/draft-email` | Yes — any authenticated user | Combines structured ticket/customer data (Postgres) with retrieved policy context (RAG) to draft a support email. Falls back to a general, honest reply (no invented policy details) if no sufficiently relevant document is found. |
 | `GET /customers` | No | CRM relational data example — customers with nested tickets in one query. |
 
 `POST /ask` body: `{ "question": "..." }` — no `role` field. The caller's role comes
 entirely from their JWT (`Authorization: Bearer <token>` header), verified server-side.
 It cannot be spoofed by changing the request body.
+
+## AI email draft generator
+
+`POST /tickets/:ticketId/draft-email` combines two data sources in one workflow:
+structured ticket/customer data from Postgres, and retrieved policy context
+via the same RAG pipeline used by `/ask`. This was the original motivating
+idea behind the project — using structured CRM data *and* unstructured
+document knowledge together, rather than treating RAG as a bolt-on chatbot.
+
+**A real hallucination was caught and fixed during testing.** Initial testing
+(role: `support`, ticket: "Battery not charging") produced a draft that
+confidently stated a specific warranty timeframe ("1-2 years from the
+original factory settings reset") — despite the uploaded CMS technical
+document containing no warranty or battery policy content at all. The two
+"relevant" chunks that got passed to the LLM were, on inspection, an
+unrelated JSON code snippet and a numbered list fragment, matched only
+because the relevance threshold (0.5) was too permissive for a genuinely
+irrelevant query.
+
+**Fix, verified before/after:**
+- Raised the relevance threshold from 0.5 to 0.55 for this endpoint.
+- Strengthened the system prompt to explicitly forbid inventing policy
+  specifics (timeframes, numbers, conditions) not literally present in the
+  retrieved context, and to default to "a team member will follow up" when
+  context is insufficient.
+- Re-running the identical request afterward: `usedPolicyContext: false`,
+  `sources: []`, and the draft honestly states no specific policy details
+  were found, asking a colleague to review — instead of fabricating terms.
+
+This is left in the README deliberately rather than only fixing it silently,
+because catching and correcting exactly this kind of failure — weak
+retrieval plus LLM overconfidence — is the core skill RAG evaluation is
+supposed to build.
 
 ## Retrieval evaluation
 
