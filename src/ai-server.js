@@ -2,15 +2,15 @@ import express from 'express';
 import prisma from './db.js';
 import multer from 'multer';
 import { PDFParse } from 'pdf-parse';
-import { registerUser, loginUser } from './auth.js';
-import { authenticateToken } from './authMiddleware.js';
 import { chunkText, splitIntoPages, getAllowedCategories } from './utils.js';
-
+import { authenticateToken } from './authMiddleware.js';
 
 const upload = multer({ dest: 'uploads/' });
 
 const app = express();
 app.use(express.json());
+
+const CRM_SERVICE_URL = 'http://localhost:3001';
 
 async function generateEmbedding(text) {
   const response = await fetch('http://localhost:11434/api/embed', {
@@ -97,53 +97,7 @@ Draft a reply email to this customer.`;
 }
 
 app.get('/health', async (req, res) => {
-  try {
-    const userCount = await prisma.user.count();
-    res.json({ status: 'ok', userCount });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ status: 'error', message: err.message });
-  }
-});
-
-app.post('/auth/register', async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
-    if (!name || !email || !password || !role) {
-      return res.status(400).json({ error: 'name, email, password, and role are required' });
-    }
-
-    const user = await registerUser(name, email, password, role);
-    res.json({ user });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-app.post('/auth/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'email and password are required' });
-    }
-
-    const result = await loginUser(email, password);
-    res.json(result);
-  } catch (err) {
-    res.status(401).json({ error: err.message });
-  }
-});
-
-app.get('/customers', async (req, res) => {
-  try {
-    const customers = await prisma.customer.findMany({
-      include: { tickets: true }
-    });
-    res.json(customers);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
+  res.json({ status: 'ok', service: 'ai' });
 });
 
 app.post('/documents/upload', authenticateToken, upload.single('file'), async (req, res) => {
@@ -304,15 +258,22 @@ app.post('/tickets/:ticketId/draft-email', authenticateToken, async (req, res) =
   try {
     const { ticketId } = req.params;
     const role = req.user.role;
+    const authHeader = req.headers['authorization'];
 
-    const ticket = await prisma.ticket.findUnique({
-      where: { id: ticketId },
-      include: { customer: true }
+    // Real service-to-service call: the AI service doesn't own ticket data,
+    // so it asks the CRM service for it, forwarding the caller's token.
+    const ticketResponse = await fetch(`${CRM_SERVICE_URL}/internal/tickets/${ticketId}`, {
+      headers: { Authorization: authHeader }
     });
 
-    if (!ticket) {
+    if (ticketResponse.status === 404) {
       return res.status(404).json({ error: 'Ticket not found' });
     }
+    if (!ticketResponse.ok) {
+      return res.status(502).json({ error: 'Failed to fetch ticket from CRM service' });
+    }
+
+    const { ticket } = await ticketResponse.json();
 
     const allowedCategories = getAllowedCategories(role);
     const searchQuery = `${ticket.subject} ${ticket.description}`;
@@ -350,7 +311,7 @@ app.post('/tickets/:ticketId/draft-email', authenticateToken, async (req, res) =
   }
 });
 
-const PORT = 3000;
+const PORT = 3002;
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`AI service running on http://localhost:${PORT}`);
 });
