@@ -11,12 +11,13 @@ datasource db {
   provider = "postgresql"
 }
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      String
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  name       String
+  email      String   @unique
+  password   String
+  role       String
+  customerId String?
+  createdAt  DateTime @default(now())
 }
 model Customer {
   id        String   @id @default(uuid())
@@ -24,9 +25,9 @@ model Customer {
   email     String   @unique
   company   String?
   tickets   Ticket[]
+  orders    Order[]
   createdAt DateTime @default(now())
 }
-
 model Ticket {
   id          String   @id @default(uuid())
   subject     String
@@ -52,4 +53,14 @@ model DocumentChunk {
   document   Document                  @relation(fields: [documentId], references: [id])
   documentId String
   embedding  Unsupported("vector(768)")?
+}
+model Order {
+  id          String   @id @default(uuid())
+  productName String
+  quantity    Int      @default(1)
+  price       Float
+  status      String   @default("delivered") // delivered | shipped | processing | cancelled
+  customer    Customer @relation(fields: [customerId], references: [id])
+  customerId  String
+  createdAt   DateTime @default(now())
 }

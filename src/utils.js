@@ -26,6 +26,7 @@ export const ROLE_CATEGORY_ACCESS = {
   admin: ['technical', 'hr', 'finance', 'general'],
   support: ['technical', 'general'],
   hr: ['hr', 'general'],
+  customer: ['general'],
 };
 
 export function getAllowedCategories(role) {

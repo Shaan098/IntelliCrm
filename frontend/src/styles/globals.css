@@ -1,0 +1,227 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Fonts already loaded via index.html ── */
+
+/* ─────────────────────────────────────────────────
+   CSS DESIGN TOKENS
+───────────────────────────────────────────────── */
+:root {
+  /* Surfaces */
+  --bg-base:     #0a0a0f;
+  --bg-surface:  #111118;
+  --bg-elevated: #1a1a24;
+  --bg-overlay:  #22222f;
+
+  /* Borders */
+  --border:       #2a2a3a;
+  --border-hover: #3a3a50;
+  --border-focus: #7c5cfc;
+
+  /* Text */
+  --text-primary:   #f0f0ff;
+  --text-secondary: #9090b0;
+  --text-muted:     #5a5a78;
+
+  /* Brand */
+  --brand-300: #b69eff;
+  --brand-400: #9b7fff;
+  --brand-500: #7c5cfc;
+  --brand-600: #5f3fdb;
+  --brand-glow: rgba(124, 92, 252, 0.15);
+
+  /* Accent (AI) */
+  --accent-400: #33dfbe;
+  --accent-500: #00d4aa;
+  --accent-glow: rgba(0, 212, 170, 0.15);
+
+  /* Semantic */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error:   #ef4444;
+  --info:    #3b82f6;
+
+  /* Scrollbar */
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a3a transparent;
+}
+
+/* ─────────────────────────────────────────────────
+   BASE RESET & DEFAULTS
+───────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ─────────────────────────────────────────────────
+   CUSTOM SCROLLBAR
+───────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a3a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a50;
+}
+
+/* ─────────────────────────────────────────────────
+   SELECTION
+───────────────────────────────────────────────── */
+::selection {
+  background: rgba(124, 92, 252, 0.3);
+  color: var(--text-primary);
+}
+
+/* ─────────────────────────────────────────────────
+   FOCUS RINGS (Accessibility)
+───────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--brand-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─────────────────────────────────────────────────
+   SHIMMER ANIMATION (Skeleton Loader)
+───────────────────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #1a1a24 25%,
+    #22222f 50%,
+    #1a1a24 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* ─────────────────────────────────────────────────
+   GLASS MORPHISM UTILITY
+───────────────────────────────────────────────── */
+.glass {
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ─────────────────────────────────────────────────
+   AI THINKING DOTS ANIMATION
+───────────────────────────────────────────────── */
+@keyframes thinking-dot {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.4; }
+  40%           { transform: scale(1);   opacity: 1; }
+}
+
+.thinking-dot:nth-child(1) { animation: thinking-dot 1.4s ease-in-out -0.32s infinite; }
+.thinking-dot:nth-child(2) { animation: thinking-dot 1.4s ease-in-out -0.16s infinite; }
+.thinking-dot:nth-child(3) { animation: thinking-dot 1.4s ease-in-out 0s infinite; }
+
+/* ─────────────────────────────────────────────────
+   GRADIENT TEXT UTILITY
+───────────────────────────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #7c5cfc 0%, #5b8af5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-ai {
+  background: linear-gradient(135deg, #00d4aa 0%, #7c5cfc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─────────────────────────────────────────────────
+   CARD HOVER LIFT
+───────────────────────────────────────────────── */
+.card-hover {
+  transition: transform 200ms ease, box-shadow 200ms ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 24px rgba(124,92,252,0.08);
+}
+
+/* ─────────────────────────────────────────────────
+   PROSE (AI Answer Content)
+───────────────────────────────────────────────── */
+.prose-ai {
+  color: var(--text-primary);
+  line-height: 1.75;
+}
+.prose-ai p { margin-bottom: 0.75rem; }
+.prose-ai strong { color: #fff; font-weight: 600; }
+.prose-ai em { color: var(--accent-400); font-style: italic; }
+.prose-ai code {
+  font-family: 'JetBrains Mono', monospace;
+  background: #1a1a24;
+  border: 1px solid #2a2a3a;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-size: 0.85em;
+  color: var(--brand-300);
+}
+
+/* ─────────────────────────────────────────────────
+   UPLOAD DRAG ZONE
+───────────────────────────────────────────────── */
+.upload-zone {
+  transition: all 200ms ease;
+}
+.upload-zone.drag-over {
+  border-color: var(--brand-500);
+  background: rgba(124, 92, 252, 0.05);
+  box-shadow: 0 0 0 4px rgba(124,92,252,0.1), inset 0 0 32px rgba(124,92,252,0.05);
+}
+
+/* ─────────────────────────────────────────────────
+   NOISE TEXTURE OVERLAY (subtle premium feel)
+───────────────────────────────────────────────── */
+.noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  pointer-events: none;
+  z-index: 0;
+}

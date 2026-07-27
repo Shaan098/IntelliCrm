@@ -13,11 +13,23 @@ export async function registerUser(name, email, password, role) {
 
   const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
+  let customerId = null;
+
+  if (role === 'customer') {
+    let customer = await prisma.customer.findUnique({ where: { email } });
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: { name, email }
+      });
+    }
+    customerId = customer.id;
+  }
+
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword, role }
+    data: { name, email, password: hashedPassword, role, customerId }
   });
 
-  return { id: user.id, name: user.name, email: user.email, role: user.role };
+  return { id: user.id, name: user.name, email: user.email, role: user.role, customerId: user.customerId };
 }
 
 export async function loginUser(email, password) {
@@ -32,10 +44,10 @@ export async function loginUser(email, password) {
   }
 
   const token = jwt.sign(
-    { userId: user.id, role: user.role, email: user.email },
+    { userId: user.id, role: user.role, email: user.email, customerId: user.customerId },
     JWT_SECRET,
     { expiresIn: '2h' }
   );
 
-  return { token, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+  return { token, user: { id: user.id, name: user.name, email: user.email, role: user.role, customerId: user.customerId } };
 }

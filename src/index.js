@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import prisma from './db.js';
 import multer from 'multer';
 import { PDFParse } from 'pdf-parse';
@@ -10,6 +11,11 @@ import { chunkText, splitIntoPages, getAllowedCategories } from './utils.js';
 const upload = multer({ dest: 'uploads/' });
 
 const app = express();
+// Allow requests from the Vite dev server (frontend)
+app.use(cors({
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  credentials: true,
+}));
 app.use(express.json());
 
 async function generateEmbedding(text) {
@@ -20,6 +26,41 @@ async function generateEmbedding(text) {
   });
   const data = await response.json();
   return data.embeddings[0];
+}
+function isOrderQuestion(question) {
+  const orderKeywords = /\b(order|orders|purchase|purchased|bought|delivery|shipment|shipped|my item|track)\b/i;
+  return orderKeywords.test(question);
+}
+
+async function answerOrderQuestion(customerId) {
+  if (!customerId) {
+    return {
+      answer: "I don't see a customer account linked to your login, so I can't look up orders. Please contact support.",
+      orders: []
+    };
+  }
+
+  const orders = await prisma.order.findMany({
+    where: { customerId },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  if (orders.length === 0) {
+    return {
+      answer: "Sorry, you have no orders on record.",
+      orders: []
+    };
+  }
+  
+
+  const orderLines = orders
+    .map((o, i) => `${i + 1}. ${o.productName} — Qty: ${o.quantity}, Price: $${o.price.toFixed(2)}, Status: ${o.status} (ordered ${o.createdAt.toDateString()})`)
+    .join('\n');
+
+  return {
+    answer: `Here are your orders:\n\n${orderLines}`,
+    orders
+  };
 }
 
 async function generateAnswer(question, contextChunks) {
@@ -244,9 +285,22 @@ app.post('/ask', authenticateToken, async (req, res) => {
   try {
     const { question } = req.body;
     const role = req.user.role;
+    const customerId = req.user.customerId;
 
     if (!question) {
       return res.status(400).json({ error: 'question is required' });
+    }
+
+    if (isOrderQuestion(question)) {
+      const result = await answerOrderQuestion(customerId);
+      return res.json({
+        question,
+        role,
+        answer: result.answer,
+        sources: [],
+        orderData: result.orders,
+        topScore: null
+      });
     }
 
     const allowedCategories = getAllowedCategories(role);
