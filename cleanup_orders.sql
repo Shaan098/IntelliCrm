@@ -1,0 +1,1 @@
+DELETE FROM "Order" WHERE "customerId" = '3269542a-00c7-473c-ac65-f630574d1479';

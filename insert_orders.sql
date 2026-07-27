@@ -1,0 +1,1 @@
+INSERT INTO "Order" (id, "productName", quantity, price, status, "customerId", "createdAt") VALUES (gen_random_uuid(), 'Wireless Mouse', 1, 25.99, 'delivered', '3269542a-00c7-473c-ac65-f630574d1479', NOW()), (gen_random_uuid(), 'Mechanical Keyboard', 1, 89.50, 'shipped', '3269542a-00c7-473c-ac65-f630574d1479', NOW());

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Send, RotateCcw } from 'lucide-react';
+import { Brain, Send, RotateCcw, AlertCircle } from 'lucide-react';
 import { useAsk } from '@/hooks/useAsk';
 import { useAuth } from '@/hooks/useAuth';
 import ThinkingLoader from '@/components/features/qa/ThinkingLoader';
 import AnswerCard from '@/components/features/qa/AnswerCard';
 import { cn, getRoleColor } from '@/lib/utils';
 import { staggerContainer, staggerItem } from '@/animations/variants';
+import { AskResponse } from '@/types/qa.types';
 
 const SAMPLE_QUESTIONS = [
   'What authentication method does the system use?',
@@ -16,7 +17,9 @@ const SAMPLE_QUESTIONS = [
 ];
 
 export default function AskPage() {
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion]   = useState('');
+  const [lastQuestion, setLastQuestion] = useState('');
+  const [history, setHistory]     = useState<AskResponse[]>([]);
   const { user } = useAuth();
   const { mutate, isPending, data, isError, error, reset } = useAsk();
 
@@ -24,16 +27,26 @@ export default function AskPage() {
     e?.preventDefault();
     const q = question.trim();
     if (!q || isPending) return;
+    // Save previous answer to history before firing new query
+    if (data) setHistory((prev) => [data, ...prev]);
+    setLastQuestion(q);
+    reset();
     mutate({ question: q });
   };
 
   const handleSample = (q: string) => {
+    if (isPending) return;
+    if (data) setHistory((prev) => [data, ...prev]);
     setQuestion(q);
+    setLastQuestion(q);
+    reset();
     mutate({ question: q });
   };
 
   const handleReset = () => {
+    if (data) setHistory((prev) => [data, ...prev]);
     setQuestion('');
+    setLastQuestion('');
     reset();
   };
 
@@ -41,19 +54,17 @@ export default function AskPage() {
     <div className="max-w-3xl mx-auto space-y-8">
       {/* Header */}
       <div className="text-center">
-        <div className="inline-flex items-center gap-2 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-ai flex items-center justify-center shadow-glow-accent">
-            <Brain size={20} className="text-white" />
-          </div>
+        <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-ai mb-4 shadow-glow-accent">
+          <Brain size={22} className="text-white" />
         </div>
         <h1 className="text-2xl font-bold text-white mb-2">
           Ask <span className="gradient-text-ai">IntelliCRM</span>
         </h1>
-        <p className="text-sm text-[#9090b0] max-w-md mx-auto">
-          Ask any question about your company documents. Answers are grounded in retrieved content — with page-level citations.
+        <p className="text-sm text-[#9090b0] max-w-sm mx-auto">
+          Ask anything about your uploaded documents. Answers are grounded in retrieved content with page-level citations.
         </p>
         <div className="flex items-center justify-center gap-2 mt-3">
-          <span className="text-xs text-[#5a5a78]">You're signed in as</span>
+          <span className="text-xs text-[#5a5a78]">Signed in as</span>
           <span className={cn('inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border', getRoleColor(user?.role || ''))}>
             {user?.role}
           </span>
@@ -62,42 +73,68 @@ export default function AskPage() {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="relative">
-        <div className="relative bg-[#111118] border border-[#2a2a3a] rounded-xl hover:border-[#3a3a50] focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500/20 transition-all overflow-hidden">
+      <form onSubmit={handleSubmit}>
+        <div className={cn(
+          'relative bg-[#111118] border rounded-xl overflow-hidden transition-all',
+          isPending
+            ? 'border-accent-500/40 ring-1 ring-accent-500/20'
+            : 'border-[#2a2a3a] hover:border-[#3a3a50] focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500/20'
+        )}>
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
-            placeholder="Ask a question about your documents… (Enter to submit)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            placeholder="Ask a question about your documents… (Enter to submit, Shift+Enter for new line)"
             rows={3}
             disabled={isPending}
             aria-label="Question input"
-            className="w-full px-4 pt-4 pb-12 bg-transparent text-sm text-white placeholder-[#5a5a78] resize-none focus:outline-none disabled:opacity-50"
+            className="w-full px-4 pt-4 pb-14 bg-transparent text-sm text-white placeholder-[#5a5a78] resize-none focus:outline-none disabled:opacity-50"
           />
-          <div className="absolute bottom-3 right-3 flex items-center gap-2">
-            {(data || isError) && (
-              <button
-                type="button" onClick={handleReset}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1a1a24] border border-[#2a2a3a] text-xs text-[#9090b0] hover:text-white transition-colors"
+
+          {/* Bottom toolbar */}
+          <div className="absolute bottom-3 left-4 right-3 flex items-center justify-between">
+            <span className="text-xs text-[#5a5a78]">
+              {isPending
+                ? '⏳ Waiting for LLM response…'
+                : 'Enter to submit · Shift+Enter for newline'}
+            </span>
+            <div className="flex items-center gap-2">
+              {(data || isError) && !isPending && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#1a1a24] border border-[#2a2a3a] text-xs text-[#9090b0] hover:text-white transition-colors"
+                >
+                  <RotateCcw size={12} /> Clear
+                </button>
+              )}
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                type="submit"
+                disabled={!question.trim() || isPending}
+                className={cn(
+                  'flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-white text-xs font-medium transition-all',
+                  isPending
+                    ? 'bg-accent-600/50 cursor-not-allowed'
+                    : 'bg-gradient-brand hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shadow-brand'
+                )}
               >
-                <RotateCcw size={12} /> New
-              </button>
-            )}
-            <motion.button
-              whileTap={{ scale: 0.95 }} type="submit"
-              disabled={!question.trim() || isPending}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-brand text-white text-xs font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shadow-brand transition-all"
-            >
-              <Send size={12} />
-              Ask
-            </motion.button>
+                <Send size={12} />
+                {isPending ? 'Thinking…' : 'Ask'}
+              </motion.button>
+            </div>
           </div>
         </div>
       </form>
 
-      {/* Sample questions */}
+      {/* Sample questions (only when idle) */}
       <AnimatePresence>
-        {!data && !isPending && !isError && (
+        {!data && !isPending && !isError && history.length === 0 && (
           <motion.div
             key="samples"
             initial={{ opacity: 0, y: 8 }}
@@ -123,16 +160,84 @@ export default function AskPage() {
         )}
       </AnimatePresence>
 
-      {/* Answer area */}
+      {/* Active answer area */}
       <AnimatePresence mode="wait">
-        {isPending && <ThinkingLoader key="loading" />}
-        {isError && !isPending && (
-          <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-400">
-            {(error as Error)?.message || 'Something went wrong. Try again.'}
+        {isPending && (
+          <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            {lastQuestion && (
+              <div className="mb-4 flex items-start gap-2.5 px-1">
+                <div className="w-5 h-5 rounded-full bg-[#1a1a24] border border-[#2a2a3a] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[9px] text-[#9090b0]">Q</span>
+                </div>
+                <p className="text-sm text-[#9090b0] italic">"{lastQuestion}"</p>
+              </div>
+            )}
+            <ThinkingLoader />
           </motion.div>
         )}
-        {data && !isPending && <AnswerCard key="answer" data={data} />}
+
+        {isError && !isPending && (
+          <motion.div
+            key="error"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="p-4 rounded-xl bg-red-500/10 border border-red-500/20"
+          >
+            <div className="flex items-start gap-3">
+              <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-300 mb-0.5">Request failed</p>
+                <p className="text-xs text-red-400/80">{(error as Error)?.message || 'Something went wrong. Please try again.'}</p>
+                <button
+                  onClick={() => mutate({ question: lastQuestion })}
+                  className="mt-3 text-xs text-red-400 hover:text-red-300 underline underline-offset-2 transition-colors"
+                >
+                  Retry this question →
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {data && !isPending && (
+          <motion.div key="answer" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            {lastQuestion && (
+              <div className="mb-4 flex items-start gap-2.5 px-1">
+                <div className="w-5 h-5 rounded-full bg-brand-500/20 border border-brand-500/30 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <span className="text-[9px] text-brand-400">Q</span>
+                </div>
+                <p className="text-sm text-white font-medium">"{lastQuestion}"</p>
+              </div>
+            )}
+            <AnswerCard data={data} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Previous answers history */}
+      <AnimatePresence>
+        {history.length > 0 && (
+          <motion.div
+            key="history"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-px flex-1 bg-[#2a2a3a]" />
+              <span className="text-xs text-[#5a5a78] uppercase tracking-wider">Previous answers</span>
+              <div className="h-px flex-1 bg-[#2a2a3a]" />
+            </div>
+            <div className="space-y-6 opacity-60 hover:opacity-80 transition-opacity">
+              {history.map((item, i) => (
+                <div key={i} className="space-y-2">
+                  <p className="text-xs text-[#5a5a78] italic pl-1">"{item.question}"</p>
+                  <AnswerCard data={item} />
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );

@@ -60,6 +60,7 @@ function SidebarNavItem({ to, icon: Icon, label, collapsed }: NavItemProps) {
           <AnimatePresence>
             {!collapsed && (
               <motion.span
+                key={`label-${label}`}
                 initial={{ opacity: 0, width: 0 }}
                 animate={{ opacity: 1, width: 'auto' }}
                 exit={{ opacity: 0, width: 0 }}
