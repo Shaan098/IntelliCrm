@@ -404,7 +404,80 @@ app.post('/tickets/:ticketId/draft-email', authenticateToken, async (req, res) =
   }
 });
 
+// ── GET /documents — list all uploaded documents (auth required) ─────────────
+app.get('/documents', authenticateToken, async (req, res) => {
+  try {
+    const documents = await prisma.document.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { chunks: true } }
+      }
+    });
+    res.json(documents);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /tickets/:id/status — update ticket status (auth required) ─────────
+app.patch('/tickets/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ['open', 'in_progress', 'resolved', 'closed'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+    const updated = await prisma.ticket.update({
+      where: { id },
+      data: { status },
+      include: { customer: true }
+    });
+
+    res.json(updated);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET /stats — dashboard summary numbers ────────────────────────────────────
+app.get('/stats', authenticateToken, async (req, res) => {
+  try {
+    const [customerCount, ticketCounts, documentCount] = await Promise.all([
+      prisma.customer.count(),
+      prisma.ticket.groupBy({ by: ['status'], _count: { status: true } }),
+      prisma.document.count(),
+    ]);
+
+    const byStatus = Object.fromEntries(
+      ticketCounts.map(({ status, _count }) => [status, _count.status])
+    );
+
+    const totalTickets = Object.values(byStatus).reduce((a, b) => a + b, 0);
+
+    res.json({
+      customers:   customerCount,
+      documents:   documentCount,
+      totalTickets,
+      open:        byStatus['open']        ?? 0,
+      in_progress: byStatus['in_progress'] ?? 0,
+      resolved:    byStatus['resolved']    ?? 0,
+      closed:      byStatus['closed']      ?? 0,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const PORT = 3000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
-});
+});

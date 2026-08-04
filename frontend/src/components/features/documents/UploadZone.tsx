@@ -15,7 +15,11 @@ const CATEGORIES: { value: DocumentCategory; label: string }[] = [
   { value: 'general',   label: 'General' },
 ];
 
-export default function UploadZone() {
+interface UploadZoneProps {
+  onSuccess?: () => void;
+}
+
+export default function UploadZone({ onSuccess }: UploadZoneProps = {}) {
   const [dragOver, setDragOver]   = useState(false);
   const [file, setFile]           = useState<File | null>(null);
   const [title, setTitle]         = useState('');
@@ -27,6 +31,7 @@ export default function UploadZone() {
     mutationFn: () =>
       documentService.upload(file!, title || file!.name, category, setProgress),
     onSuccess: () => {
+      onSuccess?.();
       setTimeout(() => {
         setFile(null);
         setTitle('');
